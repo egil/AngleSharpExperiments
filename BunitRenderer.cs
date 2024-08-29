@@ -28,9 +28,6 @@ public partial class BunitRenderer : Renderer
                 IsEmbedded = true,
                 IsKeepingSourceReferences = true,
                 IsPreservingAttributeNames = true,
-                OnCreated = (elm, pos) =>
-                {
-                },
             }));
 
         context = BrowsingContext.New(config);
@@ -57,7 +54,7 @@ public partial class BunitRenderer : Renderer
             return componentId;
         });
 
-        return (BunitComponentState)GetComponentState(componentId);
+        return GetComponentState(componentId);
     }
 
     protected override ComponentState CreateComponentState(int componentId, IComponent component, ComponentState? parentComponentState)
@@ -74,11 +71,14 @@ public partial class BunitRenderer : Renderer
         }
     }
 
+    protected new BunitComponentState GetComponentState(int componentId)
+        => (BunitComponentState)base.GetComponentState(componentId);
+
     /// <inheritdoc />
     protected override Task UpdateDisplayAsync(in RenderBatch batch)
     {
-        var componentState = (BunitComponentState)GetComponentState(0);
-        WriteComponentHtml(0, componentState.Document.Body!);
+        var componentState = GetComponentState(0);
+        WriteRootComponentHtml(0, componentState.Document.Body!);
         renderCompleted.TrySetResult(componentState);
         return Task.CompletedTask;
     }

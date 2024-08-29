@@ -1,4 +1,8 @@
+@code {
+    [Parameter] public int Level { get; set; }
+}
 <main>
-    main of element with children
-    <Element />
+    element with children at @Level level.
+    <Element Level=@(Level + 1) />
 </main>
+<Element Level=@(Level + 1) />

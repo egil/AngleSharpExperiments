@@ -8,42 +8,59 @@ namespace AngleSharpExperiments;
 
 public partial class BunitRenderer
 {
-    private readonly TextEncoder _javaScriptEncoder = JavaScriptEncoder.Default;
-    private TextEncoder _htmlEncoder = HtmlEncoder.Default;
-    private string? _closestSelectValueAsString;
+    private readonly TextEncoder javaScriptEncoder = JavaScriptEncoder.Default;
+    private TextEncoder htmlEncoder = HtmlEncoder.Default;
+    private string? closestSelectValueAsString;
 
     /// <summary>
-    /// Renders the specified component as HTML to the output.
+    /// Renders the specified component as HTML to the body.
     /// </summary>
     /// <param name="componentId">The ID of the component whose current HTML state is to be rendered.</param>
-    /// <param name="output">The output destination.</param>
-    protected internal virtual void WriteComponentHtml(int componentId, IElement output)
+    /// <param name="output">The body destination.</param>
+    private void WriteRootComponentHtml(int componentId, IElement body)
     {
         // We're about to walk over some buffers inside the renderer that can be mutated during rendering.
         // So, we require exclusive access to the renderer during this synchronous process.
         Dispatcher.AssertAccess();
 
         var frames = GetCurrentRenderTreeFrames(componentId);
-        RenderFrames(componentId, output, frames, 0, frames.Count);
+        var nodes = new BunitComponentNodeList(body);
+        GetComponentState(componentId).Nodes = nodes;
+        RenderFrames(componentId, body, nodes, frames, 0, frames.Count);
     }
 
     /// <summary>
-    /// Renders the specified component frame as HTML to the output.
+    /// Renders the specified component as HTML to the body.
     /// </summary>
-    /// <param name="output">The output destination.</param>
-    /// <param name="componentFrame">The <see cref="RenderTreeFrame"/> representing the component to be rendered.</param>
-    protected virtual void RenderChildComponent(IElement output, ref RenderTreeFrame componentFrame)
+    /// <param name="componentId">The ID of the component whose current HTML state is to be rendered.</param>
+    /// <param name="output">The body destination.</param>
+    private void WriteComponentHtml(int componentId, IElement parent, BunitComponentNodeList parentComponentNodes)
     {
-        WriteComponentHtml(componentFrame.ComponentId, output);
+        // We're about to walk over some buffers inside the renderer that can be mutated during rendering.
+        // So, we require exclusive access to the renderer during this synchronous process.
+        Dispatcher.AssertAccess();
+
+        var frames = GetCurrentRenderTreeFrames(componentId);
+        var nodes = new BunitComponentNodeList(parent);
+        GetComponentState(componentId).Nodes = nodes;
+        RenderFrames(componentId, parent, nodes, frames, 0, frames.Count);
+
+        foreach (var node in nodes)
+        {
+            if (ReferenceEquals(parentComponentNodes.Parent, node.Parent))
+            {
+                parentComponentNodes.Add(node);
+            }
+        }
     }
 
-    private int RenderFrames(int componentId, IElement output, ArrayRange<RenderTreeFrame> frames, int position, int maxElements)
+    private int RenderFrames(int componentId, IElement parent, BunitComponentNodeList componentNodes, ArrayRange<RenderTreeFrame> frames, int position, int maxElements)
     {
         var nextPosition = position;
         var endPosition = position + maxElements;
         while (position < endPosition)
         {
-            nextPosition = RenderCore(componentId, output, frames, position);
+            nextPosition = RenderCore(componentId, parent, componentNodes, frames, position);
             if (position == nextPosition)
             {
                 throw new InvalidOperationException("We didn't consume any input.");
@@ -56,7 +73,8 @@ public partial class BunitRenderer
 
     private int RenderCore(
         int componentId,
-        IElement output,
+        IElement parent,
+        BunitComponentNodeList componentNodes,
         ArrayRange<RenderTreeFrame> frames,
         int position)
     {
@@ -64,55 +82,66 @@ public partial class BunitRenderer
         switch (frame.FrameType)
         {
             case RenderTreeFrameType.Element:
-                return RenderElement(componentId, output, frames, position);
+                return RenderElement(componentId, parent, componentNodes, frames, position);
             case RenderTreeFrameType.Attribute:
                 throw new InvalidOperationException($"Attributes should only be encountered within {nameof(RenderElement)}");
             case RenderTreeFrameType.Text:
-                output.AppendChild(output.Owner!.CreateTextNode(frame.TextContent));
-                return ++position;
-            case RenderTreeFrameType.Markup:
-                var nodes = htmlParser.ParseFragment(frame.MarkupContent, output);
-                for (int i = 0; i < nodes.Length; i++)
                 {
-                    output.AppendChild(nodes[i]);
+                    var node = parent.Owner!.CreateTextNode(htmlEncoder.Encode(frame.TextContent));
+                    parent.AppendChild(node);
+                    if (ReferenceEquals(parent, componentNodes.Parent))
+                        componentNodes.Add(node);
+                    return ++position;
                 }
-                return ++position;
+            case RenderTreeFrameType.Markup:
+                {
+                    var nodes = htmlParser.ParseFragment(frame.MarkupContent, parent);
+                    var addToComponentNodes = ReferenceEquals(parent, componentNodes.Parent);
+                    for (int i = 0; i < nodes.Length; i++)
+                    {
+                        var node = nodes[i];
+                        parent.AppendChild(node);
+                        if (addToComponentNodes)
+                            componentNodes.Add(node);
+                    }
+                    return ++position;
+                }
             case RenderTreeFrameType.Component:
-                return RenderChildComponent(output, frames, position);
+                return RenderChildComponent(parent, componentNodes, frames, position);
             case RenderTreeFrameType.Region:
-                return RenderFrames(componentId, output, frames, position + 1, frame.RegionSubtreeLength - 1);
+                return RenderFrames(componentId, parent, componentNodes, frames, position + 1, frame.RegionSubtreeLength - 1);
             case RenderTreeFrameType.ElementReferenceCapture:
             case RenderTreeFrameType.ComponentReferenceCapture:
                 return ++position;
             case RenderTreeFrameType.NamedEvent:
-                //RenderHiddenFieldForNamedSubmitEvent(componentId, output, frames, position);
+                //RenderHiddenFieldForNamedSubmitEvent(componentId, body, frames, position);
                 return ++position;
             default:
                 throw new InvalidOperationException($"Invalid element frame type '{frame.FrameType}'.");
         }
     }
 
-    private int RenderElement(int componentId, IElement output, ArrayRange<RenderTreeFrame> frames, int position)
+    private int RenderElement(int componentId, IElement parent, BunitComponentNodeList componentNodes, ArrayRange<RenderTreeFrame> frames, int position)
     {
-        var parent = output;
         ref var frame = ref frames.Array[position];
-        output = output.Owner!.CreateElement(frame.ElementName);
-        parent.AppendChild(output);
+        var element = parent.Owner!.CreateElement(frame.ElementName);
+        parent.AppendChild(element);
+        componentNodes.Add(element);
         int afterElement;
         var isTextArea = string.Equals(frame.ElementName, "textarea", StringComparison.OrdinalIgnoreCase);
         var isForm = string.Equals(frame.ElementName, "form", StringComparison.OrdinalIgnoreCase);
 
         // We don't want to include value attribute of textarea element.
-        var afterAttributes = RenderAttributes(output, frames, position + 1, frame.ElementSubtreeLength - 1, !isTextArea, isForm: isForm, out var capturedValueAttribute);
+        var afterAttributes = RenderAttributes(element, frames, position + 1, frame.ElementSubtreeLength - 1, !isTextArea, isForm: isForm, out var capturedValueAttribute);
 
         // When we see an <option> as a descendant of a <select>, and the option's "value" attribute matches the
         // "value" attribute on the <select>, then we auto-add the "selected" attribute to that option. This is
         // a way of converting Blazor's select binding feature to regular static HTML.
-        if (_closestSelectValueAsString != null
+        if (closestSelectValueAsString != null
             && string.Equals(frame.ElementName, "option", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(capturedValueAttribute, _closestSelectValueAsString, StringComparison.Ordinal))
+            && string.Equals(capturedValueAttribute, closestSelectValueAsString, StringComparison.Ordinal))
         {
-            output.SetAttribute("selected", null);
+            element.SetAttribute("selected", null);
         }
 
         var remainingElements = frame.ElementSubtreeLength + position - afterAttributes;
@@ -121,30 +150,30 @@ public partial class BunitRenderer
             var isSelect = string.Equals(frame.ElementName, "select", StringComparison.OrdinalIgnoreCase);
             if (isSelect)
             {
-                _closestSelectValueAsString = capturedValueAttribute;
+                closestSelectValueAsString = capturedValueAttribute;
             }
 
             if (isTextArea && !string.IsNullOrEmpty(capturedValueAttribute))
             {
                 // Textarea is a special type of form field where the value is given as text content instead of a 'value' attribute
                 // So, if we captured a value attribute, use that instead of any child content
-                output.TextContent = capturedValueAttribute;
+                element.TextContent = htmlEncoder.Encode(capturedValueAttribute);
                 afterElement = position + frame.ElementSubtreeLength; // Skip descendants
             }
             else if (string.Equals(frame.ElementName/*ElementNameField*/, "script", StringComparison.OrdinalIgnoreCase))
             {
-                afterElement = RenderScriptElementChildren(componentId, output, frames, afterAttributes, remainingElements);
+                afterElement = RenderScriptElementChildren(componentId, element, componentNodes, frames, afterAttributes, remainingElements);
             }
             else
             {
-                afterElement = RenderChildren(componentId, output, frames, afterAttributes, remainingElements);
+                afterElement = RenderChildren(componentId, element, componentNodes, frames, afterAttributes, remainingElements);
             }
 
             if (isSelect)
             {
                 // There's no concept of nested <select> elements, so as soon as we're exiting one of them,
                 // we can safely say there is no longer any value for this
-                _closestSelectValueAsString = null;
+                closestSelectValueAsString = null;
             }
 
             Debug.Assert(afterElement == position + frame.ElementSubtreeLength);
@@ -157,22 +186,22 @@ public partial class BunitRenderer
         }
     }
 
-    private int RenderScriptElementChildren(int componentId, IElement output, ArrayRange<RenderTreeFrame> frames, int position, int maxElements)
+    private int RenderScriptElementChildren(int componentId, IElement parent, BunitComponentNodeList componentNodes, ArrayRange<RenderTreeFrame> frames, int position, int maxElements)
     {
         // Inside a <script> context, AddContent calls should result in the text being
         // JavaScript encoded rather than HTML encoded. It's not that we recommend inserting
         // user-supplied content inside a <script> block, but that if someone does, we
         // want the encoding style to match the context for correctness and safety. This is
         // also consistent with .cshtml's treatment of <script>.
-        var originalEncoder = _htmlEncoder;
+        var originalEncoder = htmlEncoder;
         try
         {
-            _htmlEncoder = _javaScriptEncoder;
-            return RenderChildren(componentId, output, frames, position, maxElements);
+            htmlEncoder = javaScriptEncoder;
+            return RenderChildren(componentId, parent, componentNodes, frames, position, maxElements);
         }
         finally
         {
-            _htmlEncoder = originalEncoder;
+            htmlEncoder = originalEncoder;
         }
     }
 
@@ -247,7 +276,7 @@ public partial class BunitRenderer
                     output.SetAttribute(frame.AttributeName, null);
                     break;
                 case string value:
-                    output.SetAttribute(frame.AttributeName, value);
+                    output.SetAttribute(frame.AttributeName, htmlEncoder.Encode(value));
                     break;
                 default:
                     break;
@@ -284,21 +313,21 @@ public partial class BunitRenderer
         return new Uri(navigationManager.Uri, UriKind.Absolute).PathAndQuery;
     }
 
-    private int RenderChildren(int componentId, IElement output, ArrayRange<RenderTreeFrame> frames, int position, int maxElements)
+    private int RenderChildren(int componentId, IElement parent, BunitComponentNodeList componentNodes, ArrayRange<RenderTreeFrame> frames, int position, int maxElements)
     {
         if (maxElements == 0)
         {
             return position;
         }
 
-        return RenderFrames(componentId, output, frames, position, maxElements);
+        return RenderFrames(componentId, parent, componentNodes, frames, position, maxElements);
     }
 
-    private int RenderChildComponent(IElement output, ArrayRange<RenderTreeFrame> frames, int position)
+    private int RenderChildComponent(IElement parent, BunitComponentNodeList componentNodes, ArrayRange<RenderTreeFrame> frames, int position)
     {
         ref var frame = ref frames.Array[position];
 
-        RenderChildComponent(output, ref frame);
+        WriteComponentHtml(frame.ComponentId, parent, componentNodes);
 
         return position + frame.ComponentSubtreeLength;
     }

@@ -1,1 +1,4 @@
-<div class="elm">text in element</div>
+@code {
+    [Parameter] public int Level { get; set; }
+}
+<div class="elm-@Level" foo="bar">Level @Level element</div>
