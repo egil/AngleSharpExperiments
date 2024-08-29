@@ -1,7 +1,8 @@
-﻿using AngleSharp;
-using AngleSharp.Dom;
+﻿using System.Diagnostics;
+using AngleSharp;
 using AngleSharp.Html.Parser;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -13,7 +14,9 @@ public partial class BunitRenderer : Renderer
     private readonly NavigationManager? _navigationManager;
     private readonly IBrowsingContext context;
     private readonly IHtmlParser htmlParser;
-    private IDocument document;
+    private TaskCompletionSource<BunitComponentState> renderCompleted = new();
+
+    public override Dispatcher Dispatcher { get; } = Dispatcher.CreateDefault();
 
     public BunitRenderer(IServiceProvider serviceProvider, ILoggerFactory loggerFactory) : base(serviceProvider, loggerFactory)
     {
@@ -44,25 +47,39 @@ public partial class BunitRenderer : Renderer
         base.Dispose(disposing);
     }
 
-    public override Dispatcher Dispatcher { get; } = Dispatcher.CreateDefault();
-
-    public async Task<IDocument> RenderComponentAsync(Type componentType, ParameterView parameters, string domElementSelector)
+    public async Task<BunitComponentState> RenderComponentAsync(Type componentType, ParameterView parameters)
     {
-        var component = InstantiateComponent(componentType);
-        var componentId = AssignRootComponentId(component);
-        await RenderRootComponentAsync(componentId, parameters);
-        document = await context.OpenAsync(r => r.Content(""));
-        return document;
+        var componentId = await Dispatcher.InvokeAsync(async () =>
+        {
+            var component = InstantiateComponent(componentType);
+            var componentId = AssignRootComponentId(component);
+            await RenderRootComponentAsync(componentId, parameters);
+            return componentId;
+        });
+
+        return (BunitComponentState)GetComponentState(componentId);
+    }
+
+    protected override ComponentState CreateComponentState(int componentId, IComponent component, ComponentState? parentComponentState)
+    {
+        if (parentComponentState is BunitComponentState parent)
+        {
+            return new BunitComponentState(this, componentId, component, parent);
+        }
+        else
+        {
+            var doc = context.OpenAsync(r => r.Content(string.Empty));
+            Debug.Assert(doc.IsCompletedSuccessfully, "Should complete immediately");
+            return new BunitComponentState(this, componentId, component, doc.Result);
+        }
     }
 
     /// <inheritdoc />
     protected override Task UpdateDisplayAsync(in RenderBatch batch)
     {
-        if (document?.Body is { } body)
-        {
-            WriteComponentHtml(0, body);
-        }
-
+        var componentState = (BunitComponentState)GetComponentState(0);
+        WriteComponentHtml(0, componentState.Document.Body!);
+        renderCompleted.TrySetResult(componentState);
         return Task.CompletedTask;
     }
 
@@ -73,12 +90,12 @@ public partial class BunitRenderer : Renderer
         {
             foreach (var innerException in aggregateException.Flatten().InnerExceptions)
             {
-                Console.WriteLine(innerException.Message);
+                renderCompleted.TrySetException(innerException);
             }
         }
         else
         {
-            Console.WriteLine(exception.Message);
+            renderCompleted.TrySetException(exception);
         }
     }
 }

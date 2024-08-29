@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Text.Encodings.Web;
+using AngleSharp.Dom;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.RenderTree;
 
@@ -7,18 +8,8 @@ namespace AngleSharpExperiments;
 
 public partial class BunitRenderer
 {
-    private static readonly HashSet<string> SelfClosingElements = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    {
-        "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"
-    };
-
-    //private static readonly CascadingParameterInfo _findFormMappingContext = new CascadingParameterInfo(
-    //    new CascadingParameterAttribute(),
-    //    string.Empty,
-    //    typeof(FormMappingContext));
-
-    private readonly TextEncoder _javaScriptEncoder;
-    private TextEncoder _htmlEncoder;
+    private readonly TextEncoder _javaScriptEncoder = JavaScriptEncoder.Default;
+    private TextEncoder _htmlEncoder = HtmlEncoder.Default;
     private string? _closestSelectValueAsString;
 
     /// <summary>
@@ -26,7 +17,7 @@ public partial class BunitRenderer
     /// </summary>
     /// <param name="componentId">The ID of the component whose current HTML state is to be rendered.</param>
     /// <param name="output">The output destination.</param>
-    protected internal virtual void WriteComponentHtml(int componentId, TextWriter output)
+    protected internal virtual void WriteComponentHtml(int componentId, IElement output)
     {
         // We're about to walk over some buffers inside the renderer that can be mutated during rendering.
         // So, we require exclusive access to the renderer during this synchronous process.
@@ -41,12 +32,12 @@ public partial class BunitRenderer
     /// </summary>
     /// <param name="output">The output destination.</param>
     /// <param name="componentFrame">The <see cref="RenderTreeFrame"/> representing the component to be rendered.</param>
-    protected virtual void RenderChildComponent(TextWriter output, ref RenderTreeFrame componentFrame)
+    protected virtual void RenderChildComponent(IElement output, ref RenderTreeFrame componentFrame)
     {
         WriteComponentHtml(componentFrame.ComponentId, output);
     }
 
-    private int RenderFrames(int componentId, TextWriter output, ArrayRange<RenderTreeFrame> frames, int position, int maxElements)
+    private int RenderFrames(int componentId, IElement output, ArrayRange<RenderTreeFrame> frames, int position, int maxElements)
     {
         var nextPosition = position;
         var endPosition = position + maxElements;
@@ -65,7 +56,7 @@ public partial class BunitRenderer
 
     private int RenderCore(
         int componentId,
-        TextWriter output,
+        IElement output,
         ArrayRange<RenderTreeFrame> frames,
         int position)
     {
@@ -77,10 +68,14 @@ public partial class BunitRenderer
             case RenderTreeFrameType.Attribute:
                 throw new InvalidOperationException($"Attributes should only be encountered within {nameof(RenderElement)}");
             case RenderTreeFrameType.Text:
-                _htmlEncoder.Encode(output, frame.TextContent);
+                output.AppendChild(output.Owner!.CreateTextNode(frame.TextContent));
                 return ++position;
             case RenderTreeFrameType.Markup:
-                output.Write(frame.MarkupContent);
+                var nodes = htmlParser.ParseFragment(frame.MarkupContent, output);
+                for (int i = 0; i < nodes.Length; i++)
+                {
+                    output.AppendChild(nodes[i]);
+                }
                 return ++position;
             case RenderTreeFrameType.Component:
                 return RenderChildComponent(output, frames, position);
@@ -97,14 +92,16 @@ public partial class BunitRenderer
         }
     }
 
-    private int RenderElement(int componentId, TextWriter output, ArrayRange<RenderTreeFrame> frames, int position)
+    private int RenderElement(int componentId, IElement output, ArrayRange<RenderTreeFrame> frames, int position)
     {
+        var parent = output;
         ref var frame = ref frames.Array[position];
-        output.Write('<');
-        output.Write(frame.ElementName);
+        output = output.Owner!.CreateElement(frame.ElementName);
+        parent.AppendChild(output);
         int afterElement;
         var isTextArea = string.Equals(frame.ElementName, "textarea", StringComparison.OrdinalIgnoreCase);
         var isForm = string.Equals(frame.ElementName, "form", StringComparison.OrdinalIgnoreCase);
+
         // We don't want to include value attribute of textarea element.
         var afterAttributes = RenderAttributes(output, frames, position + 1, frame.ElementSubtreeLength - 1, !isTextArea, isForm: isForm, out var capturedValueAttribute);
 
@@ -115,14 +112,12 @@ public partial class BunitRenderer
             && string.Equals(frame.ElementName, "option", StringComparison.OrdinalIgnoreCase)
             && string.Equals(capturedValueAttribute, _closestSelectValueAsString, StringComparison.Ordinal))
         {
-            output.Write(" selected");
+            output.SetAttribute("selected", null);
         }
 
         var remainingElements = frame.ElementSubtreeLength + position - afterAttributes;
         if (remainingElements > 0 || isTextArea)
         {
-            output.Write('>');
-
             var isSelect = string.Equals(frame.ElementName, "select", StringComparison.OrdinalIgnoreCase);
             if (isSelect)
             {
@@ -133,7 +128,7 @@ public partial class BunitRenderer
             {
                 // Textarea is a special type of form field where the value is given as text content instead of a 'value' attribute
                 // So, if we captured a value attribute, use that instead of any child content
-                _htmlEncoder.Encode(output, capturedValueAttribute);
+                output.TextContent = capturedValueAttribute;
                 afterElement = position + frame.ElementSubtreeLength; // Skip descendants
             }
             else if (string.Equals(frame.ElementName/*ElementNameField*/, "script", StringComparison.OrdinalIgnoreCase))
@@ -152,30 +147,17 @@ public partial class BunitRenderer
                 _closestSelectValueAsString = null;
             }
 
-            output.Write("</");
-            output.Write(frame.ElementName);
-            output.Write('>');
             Debug.Assert(afterElement == position + frame.ElementSubtreeLength);
             return afterElement;
         }
         else
         {
-            if (SelfClosingElements.Contains(frame.ElementName))
-            {
-                output.Write(" />");
-            }
-            else
-            {
-                output.Write("></");
-                output.Write(frame.ElementName);
-                output.Write('>');
-            }
             Debug.Assert(afterAttributes == position + frame.ElementSubtreeLength);
             return afterAttributes;
         }
     }
 
-    private int RenderScriptElementChildren(int componentId, TextWriter output, ArrayRange<RenderTreeFrame> frames, int position, int maxElements)
+    private int RenderScriptElementChildren(int componentId, IElement output, ArrayRange<RenderTreeFrame> frames, int position, int maxElements)
     {
         // Inside a <script> context, AddContent calls should result in the text being
         // JavaScript encoded rather than HTML encoded. It's not that we recommend inserting
@@ -194,63 +176,6 @@ public partial class BunitRenderer
         }
     }
 
-    //private void RenderHiddenFieldForNamedSubmitEvent(int componentId, TextWriter output, ArrayRange<RenderTreeFrame> frames, int namedEventFramePosition)
-    //{
-    //    // Strictly speaking we could just emit the hidden input unconditionally, but since we currently
-    //    // only intend to support this for "form submit" events, validate that's the case
-    //    ref var namedEventFrame = ref frames.Array[namedEventFramePosition];
-    //    if (string.Equals(namedEventFrame.NamedEventType, "onsubmit", StringComparison.Ordinal)
-    //        && TryFindEnclosingElementFrame(frames, namedEventFramePosition, out var enclosingElementFrameIndex))
-    //    {
-    //        ref var enclosingElementFrame = ref frames.Array[enclosingElementFrameIndex];
-    //        if (string.Equals(enclosingElementFrame.ElementName, "form", StringComparison.OrdinalIgnoreCase))
-    //        {
-    //            if (TryCreateScopeQualifiedEventName(componentId, namedEventFrame.NamedEventAssignedName, out var combinedFormName))
-    //            {
-    //                output.Write("<input type=\"hidden\" name=\"_handler\" value=\"");
-    //                _htmlEncoder.Encode(output, combinedFormName);
-    //                output.Write("\" />");
-    //            }
-    //        }
-    //    }
-    //}
-
-    ///// <summary>
-    ///// Creates the fully scope-qualified name for a named event, if the component is within
-    ///// a <see cref="FormMappingContext"/> (whether or not that mapping context is named).
-    ///// </summary>
-    ///// <param name="componentId">The ID of the component that defines a named event.</param>
-    ///// <param name="assignedEventName">The name assigned to the named event.</param>
-    ///// <param name="scopeQualifiedEventName">The scope-qualified event name.</param>
-    ///// <returns>A flag to indicate whether a value could be produced.</returns>
-    //protected bool TryCreateScopeQualifiedEventName(int componentId, string assignedEventName, [NotNullWhen(true)] out string? scopeQualifiedEventName)
-    //{
-    //    if (FindFormMappingContext(componentId) is { } mappingContext)
-    //    {
-    //        var mappingScopeName = mappingContext.MappingScopeName;
-    //        scopeQualifiedEventName = string.IsNullOrEmpty(mappingScopeName)
-    //            ? assignedEventName
-    //            : $"[{mappingScopeName}]{assignedEventName}";
-    //        return true;
-    //    }
-    //    else
-    //    {
-    //        scopeQualifiedEventName = null;
-    //        return false;
-    //    }
-    //}
-
-    //private FormMappingContext? FindFormMappingContext(int forComponentId)
-    //{
-    //    var componentState = GetComponentState(forComponentId);
-    //    var supplier = CascadingParameterState.GetMatchingCascadingValueSupplier(
-    //        in _findFormMappingContext,
-    //        componentState.Renderer,
-    //        componentState);
-
-    //    return (FormMappingContext?)supplier?.GetCurrentValue(_findFormMappingContext);
-    //}
-
     private static bool TryFindEnclosingElementFrame(ArrayRange<RenderTreeFrame> frames, int frameIndex, out int result)
     {
         while (--frameIndex >= 0)
@@ -267,7 +192,7 @@ public partial class BunitRenderer
     }
 
     private int RenderAttributes(
-        TextWriter output,
+        IElement output,
         ArrayRange<RenderTreeFrame> frames,
         int position,
         int maxElements,
@@ -319,16 +244,10 @@ public partial class BunitRenderer
             switch (frame.AttributeValue)
             {
                 case bool flag when flag:
-                    output.Write(' ');
-                    output.Write(frame.AttributeName);
+                    output.SetAttribute(frame.AttributeName, null);
                     break;
                 case string value:
-                    output.Write(' ');
-                    output.Write(frame.AttributeName);
-                    output.Write('=');
-                    output.Write('\"');
-                    _htmlEncoder.Encode(output, value);
-                    output.Write('\"');
+                    output.SetAttribute(frame.AttributeName, value);
                     break;
                 default:
                     break;
@@ -339,16 +258,11 @@ public partial class BunitRenderer
 
         return position + maxElements;
 
-        void EmitFormActionIfNotExplicit(TextWriter output, bool isForm, bool hasExplicitActionValue)
+        void EmitFormActionIfNotExplicit(IElement output, bool isForm, bool hasExplicitActionValue)
         {
             if (isForm && _navigationManager != null && !hasExplicitActionValue)
             {
-                output.Write(' ');
-                output.Write("action");
-                output.Write('=');
-                output.Write('\"');
-                _htmlEncoder.Encode(output, GetRootRelativeUrlForFormAction(_navigationManager));
-                output.Write('\"');
+                output.SetAttribute("action", GetRootRelativeUrlForFormAction(_navigationManager));
             }
         }
     }
@@ -370,7 +284,7 @@ public partial class BunitRenderer
         return new Uri(navigationManager.Uri, UriKind.Absolute).PathAndQuery;
     }
 
-    private int RenderChildren(int componentId, TextWriter output, ArrayRange<RenderTreeFrame> frames, int position, int maxElements)
+    private int RenderChildren(int componentId, IElement output, ArrayRange<RenderTreeFrame> frames, int position, int maxElements)
     {
         if (maxElements == 0)
         {
@@ -380,7 +294,7 @@ public partial class BunitRenderer
         return RenderFrames(componentId, output, frames, position, maxElements);
     }
 
-    private int RenderChildComponent(TextWriter output, ArrayRange<RenderTreeFrame> frames, int position)
+    private int RenderChildComponent(IElement output, ArrayRange<RenderTreeFrame> frames, int position)
     {
         ref var frame = ref frames.Array[position];
 
