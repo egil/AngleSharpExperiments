@@ -1,32 +1,27 @@
 ﻿using System.Diagnostics;
 using System.Text.Encodings.Web;
 using AngleSharp.Dom;
+using AngleSharp.Html.Parser;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.RenderTree;
 
-namespace AngleSharpExperiments;
+namespace AngleSharpExperiments.Rendering;
 
-public partial class BunitRenderer
+internal class AngleSharpDomBuilder
 {
     private readonly TextEncoder javaScriptEncoder = JavaScriptEncoder.Default;
+    private readonly BunitRenderer renderer;
+    private readonly NavigationManager? navigationManager;
+    private readonly IHtmlParser htmlParser;
+
     private TextEncoder htmlEncoder = HtmlEncoder.Default;
     private string? closestSelectValueAsString;
 
-    /// <summary>
-    /// Renders the specified component as HTML to the body.
-    /// </summary>
-    /// <param name="componentId">The ID of the component whose current HTML state is to be rendered.</param>
-    /// <param name="output">The body destination.</param>
-    private void WriteRootComponentHtml(int componentId, IElement body)
+    public AngleSharpDomBuilder(BunitRenderer renderer, NavigationManager? navigationManager, IHtmlParser htmlParser)
     {
-        // We're about to walk over some buffers inside the renderer that can be mutated during rendering.
-        // So, we require exclusive access to the renderer during this synchronous process.
-        Dispatcher.AssertAccess();
-
-        var frames = GetCurrentRenderTreeFrames(componentId);
-        var nodes = new BunitComponentNodeList(body);
-        GetComponentState(componentId).Nodes = nodes;
-        RenderFrames(componentId, body, nodes, frames, 0, frames.Count);
+        this.renderer = renderer;
+        this.navigationManager = navigationManager;
+        this.htmlParser = htmlParser;
     }
 
     /// <summary>
@@ -34,17 +29,40 @@ public partial class BunitRenderer
     /// </summary>
     /// <param name="componentId">The ID of the component whose current HTML state is to be rendered.</param>
     /// <param name="output">The body destination.</param>
-    private void WriteComponentHtml(int componentId, IElement parent, BunitComponentNodeList parentComponentNodes)
+    public void BuildRootComponentDom(BunitRootComponentState rootComponentState)
     {
-        // We're about to walk over some buffers inside the renderer that can be mutated during rendering.
-        // So, we require exclusive access to the renderer during this synchronous process.
-        Dispatcher.AssertAccess();
+        var frames = rootComponentState.GetCurrentRenderTreeFrames();
+        var nodes = new BunitComponentNodeList(rootComponentState.Document.Body!);
+        rootComponentState.Nodes = nodes;
 
-        var frames = GetCurrentRenderTreeFrames(componentId);
+        RenderFrames(
+            rootComponentState.ComponentId,
+            rootComponentState.Document.Body!,
+            nodes,
+            frames,
+            position: 0,
+            frames.Count);
+
+        // Reset Dom builder state
+        closestSelectValueAsString = null;
+        TextEncoder htmlEncoder = HtmlEncoder.Default;
+    }
+
+    /// <summary>
+    /// Renders the specified component as HTML to the body.
+    /// </summary>
+    /// <param name="componentId">The ID of the component whose current HTML state is to be rendered.</param>
+    /// <param name="output">The body destination.</param>
+    private void BuildComponentDom(int componentId, IElement parent, BunitComponentNodeList parentComponentNodes)
+    {
+        var compnentState = renderer.GetComponentState(componentId);
+        var frames = compnentState.GetCurrentRenderTreeFrames();
         var nodes = new BunitComponentNodeList(parent);
-        GetComponentState(componentId).Nodes = nodes;
-        RenderFrames(componentId, parent, nodes, frames, 0, frames.Count);
+        compnentState.Nodes = nodes;
+        RenderFrames(componentId, parent, nodes, frames, position: 0, frames.Count);
 
+        // Add all nodes from the child component to the parent components nodes list,
+        // if they share the same parent.
         foreach (var node in nodes)
         {
             if (ReferenceEquals(parentComponentNodes.Parent, node.Parent))
@@ -121,7 +139,7 @@ public partial class BunitRenderer
         }
     }
 
-    private int RenderElement(int componentId, IElement parent, BunitComponentNodeList componentNodes, ArrayRange<RenderTreeFrame> frames, int position)
+    private int RenderElement(int componentId, INode parent, BunitComponentNodeList componentNodes, ArrayRange<RenderTreeFrame> frames, int position)
     {
         ref var frame = ref frames.Array[position];
         var element = parent.Owner!.CreateElement(frame.ElementName);
@@ -188,10 +206,10 @@ public partial class BunitRenderer
 
     private int RenderScriptElementChildren(int componentId, IElement parent, BunitComponentNodeList componentNodes, ArrayRange<RenderTreeFrame> frames, int position, int maxElements)
     {
-        // Inside a <script> context, AddContent calls should result in the text being
+        // Inside a <script> angleSharpContext, AddContent calls should result in the text being
         // JavaScript encoded rather than HTML encoded. It's not that we recommend inserting
         // user-supplied content inside a <script> block, but that if someone does, we
-        // want the encoding style to match the context for correctness and safety. This is
+        // want the encoding style to match the angleSharpContext for correctness and safety. This is
         // also consistent with .cshtml's treatment of <script>.
         var originalEncoder = htmlEncoder;
         try
@@ -221,7 +239,7 @@ public partial class BunitRenderer
     }
 
     private int RenderAttributes(
-        IElement output,
+        IElement element,
         ArrayRange<RenderTreeFrame> frames,
         int position,
         int maxElements,
@@ -233,7 +251,7 @@ public partial class BunitRenderer
 
         if (maxElements == 0)
         {
-            EmitFormActionIfNotExplicit(output, isForm, hasExplicitActionValue: false);
+            EmitFormActionIfNotExplicit(element, isForm, hasExplicitActionValue: false);
             return position;
         }
 
@@ -250,7 +268,7 @@ public partial class BunitRenderer
                     continue;
                 }
 
-                EmitFormActionIfNotExplicit(output, isForm, hasExplicitActionValue);
+                EmitFormActionIfNotExplicit(element, isForm, hasExplicitActionValue);
                 return candidateIndex;
             }
 
@@ -273,25 +291,25 @@ public partial class BunitRenderer
             switch (frame.AttributeValue)
             {
                 case bool flag when flag:
-                    output.SetAttribute(frame.AttributeName, null);
+                    element.SetAttribute(frame.AttributeName, null);
                     break;
                 case string value:
-                    output.SetAttribute(frame.AttributeName, htmlEncoder.Encode(value));
+                    element.SetAttribute(frame.AttributeName, htmlEncoder.Encode(value));
                     break;
                 default:
                     break;
             }
         }
 
-        EmitFormActionIfNotExplicit(output, isForm, hasExplicitActionValue);
+        EmitFormActionIfNotExplicit(element, isForm, hasExplicitActionValue);
 
         return position + maxElements;
 
         void EmitFormActionIfNotExplicit(IElement output, bool isForm, bool hasExplicitActionValue)
         {
-            if (isForm && _navigationManager != null && !hasExplicitActionValue)
+            if (isForm && navigationManager != null && !hasExplicitActionValue)
             {
-                output.SetAttribute("action", GetRootRelativeUrlForFormAction(_navigationManager));
+                output.SetAttribute("action", GetRootRelativeUrlForFormAction(navigationManager));
             }
         }
     }
@@ -327,7 +345,7 @@ public partial class BunitRenderer
     {
         ref var frame = ref frames.Array[position];
 
-        WriteComponentHtml(frame.ComponentId, parent, componentNodes);
+        BuildComponentDom(frame.ComponentId, parent, componentNodes);
 
         return position + frame.ComponentSubtreeLength;
     }

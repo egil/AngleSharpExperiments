@@ -1,6 +1,6 @@
 ﻿using Microsoft.AspNetCore.Components;
 
-namespace AngleSharpExperiments;
+namespace AngleSharpExperiments.Rendering;
 
 // When Blazor is deployed with multi-threaded runtime, WebAssemblyDispatcher will help to dispatch all Blazor JS interop calls to the main thread.
 // This is necessary because all JS objects have thread affinity. They are only available on the thread (WebWorker) which created them.
@@ -11,7 +11,7 @@ internal sealed class WebAssemblyDispatcher : Dispatcher
     internal static SynchronizationContext? _mainSynchronizationContext;
     internal static int _mainManagedThreadId;
 
-    // we really need the UI thread not just the right context, because JS objects have thread affinity
+    // we really need the UI thread not just the right angleSharpContext, because JS objects have thread affinity
     public override bool CheckAccess() => _mainManagedThreadId == Environment.CurrentManagedThreadId;
 
     public override Task InvokeAsync(Action workItem)
@@ -30,7 +30,7 @@ internal sealed class WebAssemblyDispatcher : Dispatcher
 
         // RendererSynchronizationContext doesn't need to deal with thread affinity and so it could execute jobs on calling thread as optimization.
         // we could not do it for WASM/JavaScript, because we need to solve for thread affinity of JavaScript objects, so we always Post into the queue.
-        _mainSynchronizationContext!.Post(static (object? o) =>
+        _mainSynchronizationContext!.Post(static (o) =>
         {
             var state = ((TaskCompletionSource tcs, Action workItem))o!;
             try
@@ -58,7 +58,7 @@ internal sealed class WebAssemblyDispatcher : Dispatcher
 
         var tcs = new TaskCompletionSource<TResult>();
 
-        _mainSynchronizationContext!.Post(static (object? o) =>
+        _mainSynchronizationContext!.Post(static (o) =>
         {
             var state = ((TaskCompletionSource<TResult> tcs, Func<TResult> workItem))o!;
             try
@@ -88,7 +88,7 @@ internal sealed class WebAssemblyDispatcher : Dispatcher
 
         var tcs = new TaskCompletionSource();
 
-        _mainSynchronizationContext!.Post(static (object? o) =>
+        _mainSynchronizationContext!.Post(static (o) =>
         {
             var state = ((TaskCompletionSource tcs, Func<Task> workItem))o!;
 
@@ -133,7 +133,7 @@ internal sealed class WebAssemblyDispatcher : Dispatcher
 
         var tcs = new TaskCompletionSource<TResult>();
 
-        _mainSynchronizationContext!.Post(static (object? o) =>
+        _mainSynchronizationContext!.Post(static (o) =>
         {
             var state = ((TaskCompletionSource<TResult> tcs, Func<Task<TResult>> workItem))o!;
             try

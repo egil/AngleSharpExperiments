@@ -7,21 +7,23 @@ using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace AngleSharpExperiments;
+namespace AngleSharpExperiments.Rendering;
 
 public partial class BunitRenderer : Renderer
 {
-    private readonly NavigationManager? _navigationManager;
-    private readonly IBrowsingContext context;
-    private readonly IHtmlParser htmlParser;
+    private readonly IConfiguration angleSharpConfiguration;
+    private readonly IBrowsingContext angleSharpContext;
     private TaskCompletionSource<BunitComponentState> renderCompleted = new();
 
     public override Dispatcher Dispatcher { get; } = Dispatcher.CreateDefault();
 
-    public BunitRenderer(IServiceProvider serviceProvider, ILoggerFactory loggerFactory) : base(serviceProvider, loggerFactory)
+    public IServiceProvider Services { get; }
+
+    public BunitRenderer(IServiceProvider serviceProvider, ILoggerFactory loggerFactory)
+        : base(serviceProvider, loggerFactory)
     {
-        _navigationManager = serviceProvider.GetService<NavigationManager>();
-        var config = Configuration.Default
+        Services = serviceProvider;
+        angleSharpConfiguration = Configuration.Default
             .With<IHtmlParser>(_ => new HtmlParser(new HtmlParserOptions
             {
                 IsAcceptingCustomElementsEverywhere = true,
@@ -30,21 +32,20 @@ public partial class BunitRenderer : Renderer
                 IsPreservingAttributeNames = true,
             }));
 
-        context = BrowsingContext.New(config);
-        htmlParser = context.GetService<IHtmlParser>()!;
+        angleSharpContext = BrowsingContext.New(angleSharpConfiguration);
     }
 
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
-            context.Dispose();
+            angleSharpContext.Dispose();
         }
 
         base.Dispose(disposing);
     }
 
-    public async Task<BunitComponentState> RenderComponentAsync(Type componentType, ParameterView parameters)
+    public async Task<BunitRootComponentState> RenderComponentAsync(Type componentType, ParameterView parameters)
     {
         var componentId = await Dispatcher.InvokeAsync(async () =>
         {
@@ -54,7 +55,9 @@ public partial class BunitRenderer : Renderer
             return componentId;
         });
 
-        return GetComponentState(componentId);
+        await renderCompleted.Task;
+        var rootComponentState = GetRootComponentState(componentId);
+        return rootComponentState;
     }
 
     protected override ComponentState CreateComponentState(int componentId, IComponent component, ComponentState? parentComponentState)
@@ -65,20 +68,26 @@ public partial class BunitRenderer : Renderer
         }
         else
         {
-            var doc = context.OpenAsync(r => r.Content(string.Empty));
+            var doc = angleSharpContext.OpenAsync(r => r.Content(string.Empty));
             Debug.Assert(doc.IsCompletedSuccessfully, "Should complete immediately");
-            return new BunitComponentState(this, componentId, component, doc.Result);
+            return new BunitRootComponentState(this, componentId, component, doc.Result);
         }
     }
 
-    protected new BunitComponentState GetComponentState(int componentId)
+    internal new BunitComponentState GetComponentState(int componentId)
         => (BunitComponentState)base.GetComponentState(componentId);
+
+    internal BunitRootComponentState GetRootComponentState(int componentId)
+        => (BunitRootComponentState)base.GetComponentState(componentId);
+
+    internal new ArrayRange<RenderTreeFrame> GetCurrentRenderTreeFrames(int componentId)
+        => base.GetCurrentRenderTreeFrames(componentId);
 
     /// <inheritdoc />
     protected override Task UpdateDisplayAsync(in RenderBatch batch)
     {
-        var componentState = GetComponentState(0);
-        WriteRootComponentHtml(0, componentState.Document.Body!);
+        var componentState = GetRootComponentState(0); // TODO dont hardcode componentId here.
+        componentState.UpdateDom();
         renderCompleted.TrySetResult(componentState);
         return Task.CompletedTask;
     }

@@ -1,11 +1,11 @@
-﻿namespace AngleSharpExperiments;
+﻿namespace AngleSharpExperiments.Rendering;
 
 // A mechanism for queuing JS-to-.NET calls so they aren't nested on the call stack and hence
 // have the same ordering behaviors as in Blazor Server. This eliminates serveral inconsistency
 // problems and bugs that otherwise require special-case solutions in other parts of the code.
 //
 // The reason for not using an actual SynchronizationContext for this is that, historically,
-// Blazor WebAssembly has not enforced any rule around having to dispatch to a sync context.
+// Blazor WebAssembly has not enforced any rule around having to dispatch to a sync angleSharpContext.
 // Adding such a rule now would be too breaking, given how component libraries may be reliant
 // on being able to render at any time without InvokeAsync. If we add true multithreading in the
 // future, we should start enforcing dispatch if (and only if) multithreading is enabled.

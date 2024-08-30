@@ -2,6 +2,7 @@ using System;
 using AngleSharp;
 using AngleSharp.Dom;
 using AngleSharpExperiments.Components;
+using AngleSharpExperiments.Rendering;
 using Bunit;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,10 +16,9 @@ public class UnitTest1
     [Fact]
     public async Task Test1()
     {
-        using var services = new ServiceCollection().BuildServiceProvider();
-        using var renderer = new BunitRenderer(services, NullLoggerFactory.Instance);
-        var cut = await renderer.RenderComponentAsync(typeof(Root), ParameterView.Empty);
-        var rawDoc = cut.Document.Body.ChildNodes.Prettify();
+        await using var ctx = new BunitContext();
+        var cut = await ctx.RenderAsync<Root>();
+        var rawDoc = cut.Document.Body!.ChildNodes.Prettify();
         var raw = cut.Nodes.Prettify();
 
         foreach (var child in cut.Children)

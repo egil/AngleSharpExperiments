@@ -3,14 +3,14 @@ using System.Diagnostics;
 using AngleSharp;
 using AngleSharp.Dom;
 
-namespace AngleSharpExperiments;
+namespace AngleSharpExperiments.Rendering;
 
 internal class BunitComponentNodeList : INodeList
 {
     internal static readonly BunitComponentNodeList Empty = new(null!);
     internal readonly List<INode> entries;
 
-    public INode this[Int32 index]
+    public INode this[int index]
     {
         get => entries[index];
     }
