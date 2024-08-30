@@ -2,6 +2,7 @@
 using System.Text.Encodings.Web;
 using AngleSharp.Dom;
 using AngleSharp.Html.Parser;
+using Bunit.Web.AngleSharp;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.RenderTree;
 
@@ -10,6 +11,7 @@ namespace AngleSharpExperiments.Rendering;
 internal class AngleSharpDomBuilder
 {
     private readonly TextEncoder javaScriptEncoder = JavaScriptEncoder.Default;
+    private readonly BunitRootComponentState rootComponentState;
     private readonly BunitRenderer renderer;
     private readonly NavigationManager? navigationManager;
     private readonly IHtmlParser htmlParser;
@@ -17,8 +19,13 @@ internal class AngleSharpDomBuilder
     private TextEncoder htmlEncoder = HtmlEncoder.Default;
     private string? closestSelectValueAsString;
 
-    public AngleSharpDomBuilder(BunitRenderer renderer, NavigationManager? navigationManager, IHtmlParser htmlParser)
+    public AngleSharpDomBuilder(
+        BunitRootComponentState rootComponentState,
+        BunitRenderer renderer,
+        NavigationManager? navigationManager,
+        IHtmlParser htmlParser)
     {
+        this.rootComponentState = rootComponentState;
         this.renderer = renderer;
         this.navigationManager = navigationManager;
         this.htmlParser = htmlParser;
@@ -29,7 +36,7 @@ internal class AngleSharpDomBuilder
     /// </summary>
     /// <param name="componentId">The ID of the component whose current HTML state is to be rendered.</param>
     /// <param name="output">The body destination.</param>
-    public void BuildRootComponentDom(BunitRootComponentState rootComponentState)
+    public void BuildRootComponentDom()
     {
         var frames = rootComponentState.GetCurrentRenderTreeFrames();
         var nodes = new BunitComponentNodeList(rootComponentState.Document.Body!);
@@ -42,6 +49,8 @@ internal class AngleSharpDomBuilder
             frames,
             position: 0,
             frames.Count);
+
+
 
         // Reset Dom builder state
         closestSelectValueAsString = null;
@@ -109,6 +118,7 @@ internal class AngleSharpDomBuilder
                     parent.AppendChild(node);
                     if (ReferenceEquals(parent, componentNodes.Parent))
                         componentNodes.Add(node);
+                    rootComponentState.NodeComponentMap.Add(node, componentId);
                     return ++position;
                 }
             case RenderTreeFrameType.Markup:
@@ -121,7 +131,10 @@ internal class AngleSharpDomBuilder
                         parent.AppendChild(node);
                         if (addToComponentNodes)
                             componentNodes.Add(node);
+
+                        rootComponentState.NodeComponentMap.Add(node, componentId);
                     }
+
                     return ++position;
                 }
             case RenderTreeFrameType.Component:
@@ -145,6 +158,7 @@ internal class AngleSharpDomBuilder
         var element = parent.Owner!.CreateElement(frame.ElementName);
         parent.AppendChild(element);
         componentNodes.Add(element);
+        rootComponentState.NodeComponentMap.Add(element, componentId);
         int afterElement;
         var isTextArea = string.Equals(frame.ElementName, "textarea", StringComparison.OrdinalIgnoreCase);
         var isForm = string.Equals(frame.ElementName, "form", StringComparison.OrdinalIgnoreCase);

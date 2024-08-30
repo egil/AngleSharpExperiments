@@ -23,14 +23,16 @@ public partial class BunitRenderer : Renderer
         : base(serviceProvider, loggerFactory)
     {
         Services = serviceProvider;
-        angleSharpConfiguration = Configuration.Default
+        angleSharpConfiguration = Configuration
+            .Default
             .With<IHtmlParser>(_ => new HtmlParser(new HtmlParserOptions
             {
                 IsAcceptingCustomElementsEverywhere = true,
                 IsEmbedded = true,
                 IsKeepingSourceReferences = true,
                 IsPreservingAttributeNames = true,
-            }));
+            }))
+            .With<BunitRenderer>(_ => this);
 
         angleSharpContext = BrowsingContext.New(angleSharpConfiguration);
     }

@@ -31,7 +31,7 @@ public class UnitTest1
     }
 
     [Fact]
-    public async Task Adhoc_vs_bunit()
+    public async Task V1_vs_V2prototype()
     {
         using var bunitV1 = new TestContext();
         await using var bunitV2 = new BunitContext();
@@ -42,5 +42,39 @@ public class UnitTest1
         var rawV2 = cutV2.Nodes.Prettify();
 
         Assert.Equal(rawV1, rawV2, ignoreCase: true);
+    }
+
+    [Fact]
+    public async Task FindComponentFromNode()
+    {
+        await using var bunitV2 = new BunitContext();
+        var cutV2 = await bunitV2.RenderAsync<Root>();
+        var addr = cutV2.Nodes.QuerySelector("address");
+
+        var owningComponent = addr.GetComponent();
+
+        Assert.NotNull(owningComponent);
+    }
+}
+
+public static class BunitNodeExtensions
+{
+    public static BunitComponentState? GetComponent(this INode node)
+    {
+        var renderer = node.Owner!.Context.GetService<BunitRenderer>()!;
+        var rootComponentId = int.Parse(node.Owner!.Body!.GetAttribute("bunit-component-id")!);
+        var rootComponentState = renderer.GetRootComponentState(rootComponentId);
+
+        INode? candidate = node;
+        do
+        {
+            if (rootComponentState.NodeComponentMap.TryGetValue(candidate, out var componentId))
+            {
+                return renderer.GetComponentState(componentId);
+            }
+            candidate = candidate.Parent;
+        } while (candidate is not null);
+
+        return null;
     }
 }

@@ -30,7 +30,10 @@ internal class BunitComponentNodeList : INodeList
 
     public void Add(INode node)
     {
-        Debug.Assert(ReferenceEquals(node.Parent, Parent), "The list should only contain nodes at the same level in the DOM tree.");
+        Debug.Assert(
+            ReferenceEquals(node.Parent, Parent),
+            "The list should only contain nodes at the same level in the DOM tree.");
+
         entries.Add(node);
     }
 
