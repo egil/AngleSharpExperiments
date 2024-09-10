@@ -1,4 +1,5 @@
-﻿using AngleSharp.Dom;
+﻿using AngleSharp;
+using AngleSharp.Dom;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.RenderTree;
@@ -10,14 +11,36 @@ public class BunitComponentState : ComponentState
     private readonly BunitRenderer renderer;
     private readonly List<BunitComponentState> children = [];
     private INodeList nodes = BunitComponentNodeList.Empty;
+    private string? markup;
 
     public IReadOnlyList<BunitComponentState> Children => children;
 
-    public INodeList Nodes { get => nodes; internal set => nodes = value; }
+    public INodeList Nodes
+    {
+        get => nodes;
+        internal set
+        {
+            markup = null;
+            nodes = value;
+        }
+    }
 
     public BunitRootComponentState? Root { get; }
 
     public BunitComponentState? Parent { get; }
+
+    public string Markup
+    {
+        get
+        {
+            if (markup is null)
+            {
+                markup = nodes.Prettify();
+            }
+
+            return markup;
+        }
+    }
 
     public BunitComponentState(BunitRenderer renderer, int componentId, IComponent component, BunitComponentState parentComponentState)
         : base(renderer, componentId, component, parentComponentState)

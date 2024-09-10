@@ -50,8 +50,6 @@ internal class AngleSharpDomBuilder
             position: 0,
             frames.Count);
 
-
-
         // Reset Dom builder state
         closestSelectValueAsString = null;
         TextEncoder htmlEncoder = HtmlEncoder.Default;
@@ -284,6 +282,12 @@ internal class AngleSharpDomBuilder
 
                 EmitFormActionIfNotExplicit(element, isForm, hasExplicitActionValue);
                 return candidateIndex;
+            }
+
+            if (frame.AttributeEventHandlerId > 0)
+            {
+                element.SetAttribute("bunit:event-handler-id", frame.AttributeEventHandlerId.ToString());
+                continue;
             }
 
             if (frame.AttributeName.Equals("value", StringComparison.OrdinalIgnoreCase))

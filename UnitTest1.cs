@@ -1,13 +1,7 @@
-using System;
 using AngleSharp;
 using AngleSharp.Dom;
 using AngleSharpExperiments.Components;
-using AngleSharpExperiments.Rendering;
 using Bunit;
-using Microsoft.AspNetCore.Components;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Xunit;
 
 namespace AngleSharpExperiments;
 
@@ -55,26 +49,15 @@ public class UnitTest1
 
         Assert.NotNull(owningComponent);
     }
-}
 
-public static class BunitNodeExtensions
-{
-    public static BunitComponentState? GetComponent(this INode node)
+    [Fact]
+    public async Task AddAndRemoveElements()
     {
-        var renderer = node.Owner!.Context.GetService<BunitRenderer>()!;
-        var rootComponentId = int.Parse(node.Owner!.Body!.GetAttribute("bunit-component-id")!);
-        var rootComponentState = renderer.GetRootComponentState(rootComponentId);
+        await using var ctx = new BunitContext();
+        var cut = await ctx.RenderAsync<AddOrRemoveElement>();
+        var input = cut.Find("input");
+        await input.DispatchEventAsync(new ChangeEventArgs<int> { Value = 2 });
 
-        INode? candidate = node;
-        do
-        {
-            if (rootComponentState.NodeComponentMap.TryGetValue(candidate, out var componentId))
-            {
-                return renderer.GetComponentState(componentId);
-            }
-            candidate = candidate.Parent;
-        } while (candidate is not null);
-
-        return null;
+        Assert.Equal(2, cut.Find("main").ChildElementCount);
     }
 }

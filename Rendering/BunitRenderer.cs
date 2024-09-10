@@ -1,6 +1,10 @@
 ﻿using System.Diagnostics;
 using AngleSharp;
+using AngleSharp.Dom;
+using AngleSharp.Html.Dom;
 using AngleSharp.Html.Parser;
+using AngleSharp.Mathml.Dom;
+using AngleSharp.Svg.Dom;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.RenderTree;
@@ -8,6 +12,24 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace AngleSharpExperiments.Rendering;
+
+class BunitElementFactory : IElementFactory<Document, HtmlElement>, IElementFactory<Document, MathElement>, IElementFactory<Document, SvgElement>
+{
+    MathElement IElementFactory<Document, MathElement>.Create(Document document, string localName, string? prefix, NodeFlags flags)
+    {
+        throw new NotImplementedException();
+    }
+
+    SvgElement IElementFactory<Document, SvgElement>.Create(Document document, string localName, string? prefix, NodeFlags flags)
+    {
+        throw new NotImplementedException();
+    }
+
+    HtmlElement IElementFactory<Document, HtmlElement>.Create(Document document, string localName, string? prefix, NodeFlags flags)
+    {
+        throw new NotImplementedException();
+    }
+}
 
 public partial class BunitRenderer : Renderer
 {
@@ -22,17 +44,22 @@ public partial class BunitRenderer : Renderer
     public BunitRenderer(IServiceProvider serviceProvider, ILoggerFactory loggerFactory)
         : base(serviceProvider, loggerFactory)
     {
+        var elmFactory = new BunitElementFactory();
         Services = serviceProvider;
         angleSharpConfiguration = Configuration
             .Default
-            .With<IHtmlParser>(_ => new HtmlParser(new HtmlParserOptions
+            //.Without<IElementFactory<Document, HtmlElement>>()
+            //.Without<IElementFactory<Document, MathElement>>()
+            //.Without<IElementFactory<Document, SvgElement>>()
+            //.With(elmFactory)
+            .WithOnly<IHtmlParser>(_ => new HtmlParser(new HtmlParserOptions
             {
                 IsAcceptingCustomElementsEverywhere = true,
                 IsEmbedded = true,
                 IsKeepingSourceReferences = true,
                 IsPreservingAttributeNames = true,
             }))
-            .With<BunitRenderer>(_ => this);
+            .WithOnly(this);
 
         angleSharpContext = BrowsingContext.New(angleSharpConfiguration);
     }
@@ -71,7 +98,7 @@ public partial class BunitRenderer : Renderer
         else
         {
             var doc = angleSharpContext.OpenAsync(r => r.Content(string.Empty));
-            Debug.Assert(doc.IsCompletedSuccessfully, "Should complete immediately");
+            Debug.Assert(doc.IsCompleted, "Should complete immediately");
             return new BunitRootComponentState(this, componentId, component, doc.Result);
         }
     }

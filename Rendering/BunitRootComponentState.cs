@@ -17,7 +17,7 @@ public class BunitRootComponentState : BunitComponentState
         : base(renderer, componentId, component)
     {
         Document = document;
-        Document.Body!.SetAttribute("bunit-component-id", componentId.ToString());
+        Document.Body!.SetAttribute("bunit:component-id", componentId.ToString());
         NodeComponentMap.Add(Document.Body, componentId);
         domBuilder = new AngleSharpDomBuilder(
             this,

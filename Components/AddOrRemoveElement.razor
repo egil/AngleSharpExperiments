@@ -1,0 +1,42 @@
+@using Microsoft.AspNetCore.Components.Forms
+<input type="number" @bind-value=@count @bind-value:event="onchange" min="0" max=@(ElementTypes.Length) />
+<p>Rendering @count elements</p>
+<main>
+    @for (var i = 0; i < count && i < ElementTypes.Length; i++)
+    {
+        switch (ElementTypes[i])
+        {
+            case "div":
+                <div>Div</div>
+                break;
+            case "span":
+                <span>Span</span>
+                break;
+            case "p":
+                <p>Paragraph</p>
+                break;
+            case "h1":
+                <h1>Heading 1</h1>
+                break;
+            case "h2":
+                <h2>Heading 2</h2>
+                break;
+            case "h3":
+                <h3>Heading 3</h3>
+                break;
+            case "h4":
+                <h4>Heading 4</h4>
+                break;
+            case "h5":
+                <h5>Heading 5</h5>
+                break;
+            case "h6":
+                <h6>Heading 6</h6>
+                break;
+        }
+    }
+</main>
+@code {
+    private static string[] ElementTypes = ["div", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6"];
+    private int count = 0;
+}
