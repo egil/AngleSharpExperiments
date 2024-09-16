@@ -1,40 +1,18 @@
-﻿using System.Diagnostics;
-using AngleSharp;
-using AngleSharp.Dom;
-using AngleSharp.Html.Dom;
+﻿using AngleSharp;
 using AngleSharp.Html.Parser;
-using AngleSharp.Mathml.Dom;
-using AngleSharp.Svg.Dom;
+using AngleSharpExperiments.AngleSharpRendering;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.RenderTree;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace AngleSharpExperiments.Rendering;
 
-class BunitElementFactory : IElementFactory<Document, HtmlElement>, IElementFactory<Document, MathElement>, IElementFactory<Document, SvgElement>
-{
-    MathElement IElementFactory<Document, MathElement>.Create(Document document, string localName, string? prefix, NodeFlags flags)
-    {
-        throw new NotImplementedException();
-    }
-
-    SvgElement IElementFactory<Document, SvgElement>.Create(Document document, string localName, string? prefix, NodeFlags flags)
-    {
-        throw new NotImplementedException();
-    }
-
-    HtmlElement IElementFactory<Document, HtmlElement>.Create(Document document, string localName, string? prefix, NodeFlags flags)
-    {
-        throw new NotImplementedException();
-    }
-}
-
 public partial class BunitRenderer : Renderer
 {
-    private readonly IConfiguration angleSharpConfiguration;
+    private readonly AngleSharp.IConfiguration angleSharpConfiguration;
     private readonly IBrowsingContext angleSharpContext;
+    private readonly HtmlParser htmlParser;
+    private readonly AngleSharpRenderer angleSharpRenderer;
     private TaskCompletionSource<BunitComponentState> renderCompleted = new();
 
     public override Dispatcher Dispatcher { get; } = Dispatcher.CreateDefault();
@@ -44,23 +22,20 @@ public partial class BunitRenderer : Renderer
     public BunitRenderer(IServiceProvider serviceProvider, ILoggerFactory loggerFactory)
         : base(serviceProvider, loggerFactory)
     {
-        var elmFactory = new BunitElementFactory();
+        htmlParser = new HtmlParser(new HtmlParserOptions
+        {
+            IsAcceptingCustomElementsEverywhere = true,
+            IsEmbedded = true,
+            IsKeepingSourceReferences = true,
+            IsPreservingAttributeNames = true,
+        });
+        angleSharpRenderer = new AngleSharpRenderer(htmlParser);
         Services = serviceProvider;
+
         angleSharpConfiguration = Configuration
             .Default
-            //.Without<IElementFactory<Document, HtmlElement>>()
-            //.Without<IElementFactory<Document, MathElement>>()
-            //.Without<IElementFactory<Document, SvgElement>>()
-            //.With(elmFactory)
-            .WithOnly<IHtmlParser>(_ => new HtmlParser(new HtmlParserOptions
-            {
-                IsAcceptingCustomElementsEverywhere = true,
-                IsEmbedded = true,
-                IsKeepingSourceReferences = true,
-                IsPreservingAttributeNames = true,
-            }))
+            .WithOnly<IHtmlParser>(htmlParser)
             .WithOnly(this);
-
         angleSharpContext = BrowsingContext.New(angleSharpConfiguration);
     }
 
@@ -97,9 +72,9 @@ public partial class BunitRenderer : Renderer
         }
         else
         {
-            var doc = angleSharpContext.OpenAsync(r => r.Content(string.Empty));
-            Debug.Assert(doc.IsCompleted, "Should complete immediately");
-            return new BunitRootComponentState(this, componentId, component, doc.Result);
+            var doc = angleSharpContext.OpenAsync(r => r.Content(string.Empty)).GetAwaiter().GetResult();
+            angleSharpRenderer.AttachRootComponentToLogicalElement(componentId, doc.Body!);
+            return new BunitRootComponentState(this, componentId, component, doc);
         }
     }
 
@@ -113,11 +88,41 @@ public partial class BunitRenderer : Renderer
         => base.GetCurrentRenderTreeFrames(componentId);
 
     /// <inheritdoc />
+    //protected override Task UpdateDisplayAsync(in RenderBatch batch)
+    //{
+    //    var componentState = GetRootComponentState(0); // TODO dont hardcode componentId here.
+    //    componentState.UpdateDom();
+    //    renderCompleted.TrySetResult(componentState);
+    //    return Task.CompletedTask;
+    //}
+
     protected override Task UpdateDisplayAsync(in RenderBatch batch)
     {
-        var componentState = GetRootComponentState(0); // TODO dont hardcode componentId here.
-        componentState.UpdateDom();
-        renderCompleted.TrySetResult(componentState);
+        var updatedComponents = batch.UpdatedComponents;
+        var referenceFrames = batch.ReferenceFrames;
+
+        for (int i = 0; i < batch.UpdatedComponents.Count; i++)
+        {
+            ref var diff = ref updatedComponents.Array[i];
+            var componentId = diff.ComponentId;
+            var edits = diff.Edits;
+            angleSharpRenderer.UpdateComponent(batch, componentId, edits, referenceFrames);
+        }
+
+        var disposedComponentIDs = batch.DisposedComponentIDs;
+        for (int i = 0; i < disposedComponentIDs.Count; i++)
+        {
+            var componentId = disposedComponentIDs.Array[i];
+            angleSharpRenderer.DisposeComponent(componentId);
+        }
+
+        var disposedEventHandlerIDs = batch.DisposedEventHandlerIDs;
+        for (int i = 0; i < disposedEventHandlerIDs.Count; i++)
+        {
+            var eventHandlerId = disposedEventHandlerIDs.Array[i];
+            angleSharpRenderer.DisposeEventHandler(eventHandlerId);
+        }
+
         return Task.CompletedTask;
     }
 

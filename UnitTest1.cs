@@ -8,6 +8,14 @@ namespace AngleSharpExperiments;
 public class UnitTest1
 {
     [Fact]
+    public async Task Test1_ported_renderer()
+    {
+        await using var ctx = new BunitContext();
+        var cut = await ctx.RenderAsync<Root>();
+        var markup = cut.Document.Prettify();
+    }
+
+    [Fact]
     public async Task Test1()
     {
         await using var ctx = new BunitContext();

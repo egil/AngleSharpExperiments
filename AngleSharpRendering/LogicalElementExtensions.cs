@@ -2,11 +2,11 @@
 
 namespace AngleSharpExperiments.AngleSharpRendering;
 
-public class LogicalElementContext
+public static class LogicalElementExtensions
 {
-    private readonly Dictionary<INode, LogicalElement> map = [];
+    private static readonly Dictionary<INode, LogicalElement> map = [];
 
-    public LogicalElement ToLogicalElement(INode element, bool allowExistingContents = false)
+    public static LogicalElement ToLogicalElement(INode element, bool allowExistingContents = false)
     {
         if (map.TryGetValue(element, out LogicalElement? value))
         {
@@ -35,7 +35,7 @@ public class LogicalElementContext
         return logicalElement;
     }
 
-    public void EmptyLogicalElement(LogicalElement element)
+    public static void EmptyLogicalElement(LogicalElement element)
     {
         var childrenArray = GetLogicalChildrenArray(element);
         while (childrenArray?.Count > 0)
@@ -44,14 +44,14 @@ public class LogicalElementContext
         }
     }
 
-    public LogicalElement CreateAndInsertLogicalContainer(LogicalElement parent, int childIndex)
+    public static LogicalElement CreateAndInsertLogicalContainer(LogicalElement parent, int childIndex)
     {
         var containerElement = parent.Node.Owner!.CreateComment("!");
         InsertLogicalChild(containerElement, parent, childIndex);
         return ToLogicalElement(containerElement);
     }
 
-    public void InsertLogicalChild(INode child, LogicalElement parent, int childIndex)
+    public static void InsertLogicalChild(INode child, LogicalElement parent, int childIndex)
     {
         var childAsLogicalElement = ToLogicalElement(child);
 
@@ -100,7 +100,7 @@ public class LogicalElementContext
         childAsLogicalElement.LogicalParent = parent;
     }
 
-    public void RemoveLogicalChild(LogicalElement parent, int childIndex)
+    public static void RemoveLogicalChild(LogicalElement parent, int childIndex)
     {
         var childrenArray = GetLogicalChildrenArray(parent);
         var childToRemove = childrenArray[childIndex];
@@ -128,12 +128,12 @@ public class LogicalElementContext
         map.Remove(domNodeToRemove);
     }
 
-    public LogicalElement? GetLogicalParent(LogicalElement element)
+    public static LogicalElement? GetLogicalParent(LogicalElement element)
     {
         return element.LogicalParent;
     }
 
-    public LogicalElement GetLogicalChild(LogicalElement parent, int childIndex)
+    public static LogicalElement GetLogicalChild(LogicalElement parent, int childIndex)
     {
         var childrenArray = GetLogicalChildrenArray(parent);
         return childrenArray[childIndex];
@@ -148,7 +148,7 @@ public class LogicalElementContext
     /// we encounter a `foreignObject` in the SVG, then all its children will be placed
     /// under the XHTML namespace.
     /// </summary>
-    public bool IsSvgElement(LogicalElement element)
+    public static bool IsSvgElement(LogicalElement element)
     {
         // Note: This check is intentionally case-sensitive since we expect this element
         // to appear as a child of an SVG element and SVGs are case-sensitive.
@@ -157,12 +157,12 @@ public class LogicalElementContext
             && closestElement.TagName != "foreignObject";
     }
 
-    public List<LogicalElement> GetLogicalChildrenArray(LogicalElement element)
+    public static List<LogicalElement> GetLogicalChildrenArray(LogicalElement element)
     {
         return element.LogicalChildren;
     }
 
-    public LogicalElement? GetLogicalNextSibling(LogicalElement element)
+    public static LogicalElement? GetLogicalNextSibling(LogicalElement element)
     {
         var parent = GetLogicalParent(element);
         if (parent is null)
@@ -177,12 +177,12 @@ public class LogicalElementContext
             : null;
     }
 
-    public bool IsLogicalElement(INode element)
+    public static bool IsLogicalElement(INode element)
     {
         return map.ContainsKey(element);
     }
 
-    public void InsertLogicalChildBefore(INode child, LogicalElement parent, LogicalElement? before)
+    public static void InsertLogicalChildBefore(INode child, LogicalElement parent, LogicalElement? before)
     {
         var childrenArray = GetLogicalChildrenArray(parent);
         int childIndex;
@@ -209,7 +209,7 @@ public class LogicalElementContext
     /// Each of the phases here has to happen separately, because each one is designed not to
     /// interfere with the indices or DOM entries used by subsequent phases.
     /// </summary>
-    public void PermuteLogicalChildren(LogicalElement parent, List<PermutationListEntry> permutationList)
+    public static void PermuteLogicalChildren(LogicalElement parent, List<PermutationListEntry> permutationList)
     {
         // Phase 1: track which nodes we will move
         var siblings = GetLogicalChildrenArray(parent);
@@ -268,7 +268,7 @@ public class LogicalElementContext
         }
     }
 
-    public IElement? GetClosestDomElement(LogicalElement logicalElement)
+    public static IElement? GetClosestDomElement(LogicalElement logicalElement)
     {
         if (logicalElement.Node is IElement element)
         {
@@ -284,7 +284,7 @@ public class LogicalElementContext
         }
     }
 
-    public void AppendDomNode(INode child, LogicalElement parent)
+    public static void AppendDomNode(INode child, LogicalElement parent)
     {
         // This function only puts 'child' into the DOM in the right place relative to 'parent'
         // It does not update the logical children array of anything
@@ -322,7 +322,7 @@ public class LogicalElementContext
         }
     }
 
-    public INode? FindLastDomNodeInRange(LogicalElement element)
+    public static INode? FindLastDomNodeInRange(LogicalElement element)
     {
         // Returns the final node (in depth-first evaluation order) that is a descendant of the logical element.
         // As such, the entire subtree is between 'element' and 'findLastDomNodeInRange(element)' inclusive.
