@@ -6,6 +6,17 @@ public static class LogicalElementExtensions
 {
     private static readonly Dictionary<INode, LogicalElement> map = [];
 
+    public static LogicalElement AsLogicalElement(INode element)
+    {
+        if (!map.TryGetValue(element, out LogicalElement? value))
+        {
+            value = new LogicalElement(element);
+            map[element] = value;
+        }
+
+        return value;
+    }
+
     public static LogicalElement ToLogicalElement(INode element, bool allowExistingContents = false)
     {
         if (map.TryGetValue(element, out LogicalElement? value))
@@ -53,7 +64,7 @@ public static class LogicalElementExtensions
 
     public static void InsertLogicalChild(INode child, LogicalElement parent, int childIndex)
     {
-        var childAsLogicalElement = ToLogicalElement(child);
+        var childAsLogicalElement = AsLogicalElement(child);
 
         // If the child is a component comment with logical children, its children
         // need to be inserted into the parent node
@@ -153,7 +164,7 @@ public static class LogicalElementExtensions
         // Note: This check is intentionally case-sensitive since we expect this element
         // to appear as a child of an SVG element and SVGs are case-sensitive.
         var closestElement = GetClosestDomElement(element);
-        return closestElement.NamespaceUri == "http://www.w3.org/2000/svg" 
+        return closestElement.NamespaceUri == "http://www.w3.org/2000/svg"
             && closestElement.TagName != "foreignObject";
     }
 

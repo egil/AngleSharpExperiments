@@ -6,25 +6,6 @@ using Microsoft.AspNetCore.Components.RenderTree;
 
 namespace AngleSharpExperiments;
 
-public class ChangeEventArgs<T> : ChangeEventArgs
-    where T : IFormattable
-{
-    private T? value;
-
-    public new T? Value
-    {
-        get
-        {
-            return value;
-        }
-        set
-        {
-            this.value = value;
-            base.Value = value?.ToString(null, null);
-        }
-    }
-}
-
 public static class BunitNodeExtensions
 {
     public static IElement Find(this BunitComponentState componentState, string cssSelector)

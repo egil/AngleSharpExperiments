@@ -59,7 +59,7 @@ public partial class BunitRenderer : Renderer
             return componentId;
         });
 
-        await renderCompleted.Task;
+        //await renderCompleted.Task;
         var rootComponentState = GetRootComponentState(componentId);
         return rootComponentState;
     }

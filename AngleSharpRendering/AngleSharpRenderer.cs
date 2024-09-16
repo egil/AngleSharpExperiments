@@ -1,4 +1,5 @@
-﻿using System.Globalization;
+﻿using System.Diagnostics;
+using System.Globalization;
 using AngleSharp.Dom;
 using AngleSharp.Html.Dom;
 using AngleSharp.Html.Parser;
@@ -48,6 +49,9 @@ internal class AngleSharpRenderer
     public void UpdateComponent(RenderBatch batch, int componentId, ArrayBuilderSegment<RenderTreeEdit> edits, ArrayRange<RenderTreeFrame> referenceFrames)
     {
         var element = childComponentLocations[componentId];
+        
+        Debug.Assert(element.Node is IComment || element.Node == element.Node.Owner!.Body, "I assume the component's start in the DOM always a comment node or BODY.");
+
         if (element == null)
         {
             throw new InvalidOperationException($"No element is currently associated with component {componentId}");
@@ -104,6 +108,7 @@ internal class AngleSharpRenderer
                         if (element.Node is IElement domElement)
                         {
                             ApplyAttribute(batch, componentId, domElement, frame);
+                            domElement.ApplyAnyDeferredValue();
                         }
                         else
                         {
@@ -113,6 +118,7 @@ internal class AngleSharpRenderer
                     }
                 case RenderTreeEditType.RemoveAttribute:
                     {
+                        Debug.Assert(edit.RemovedAttributeName is not null);
                         var siblingIndex = edit.SiblingIndex;
                         var element = GetLogicalChild(parent, childIndexAtCurrentDepth + siblingIndex);
                         if (element.Node is IElement domElement)
@@ -262,7 +268,7 @@ internal class AngleSharpRenderer
             InsertLogicalChild(newDomElementRaw, parent, childIndex);
         }
 
-        ApplyAnyDeferredValue(newDomElementRaw);
+        newDomElementRaw.ApplyAnyDeferredValue();
     }
 
     private void InsertComponent(RenderBatch batch, LogicalElement parent, int childIndex, RenderTreeFrame frame)
@@ -342,12 +348,14 @@ internal class AngleSharpRenderer
                 if (valueOrNullToRemove is not null)
                 {
                     element.SetAttribute(name, valueOrNullToRemove);
+
                 }
                 else
                 {
                     element.RemoveAttribute(name);
                 }
             }
+
         }
     }
 
@@ -390,14 +398,19 @@ internal class AngleSharpRenderer
         }
     }
 
-
     private IDocumentFragment ParseMarkup(LogicalElement parent, string markupContent, bool isSvg)
     {
-        var nodes = htmlParser.ParseFragment(markupContent, (IElement)parent.Node);
-        var result = parent.Node.Owner.CreateDocumentFragment();
-        foreach (var node in nodes)
+        var contextCandidate = parent.Node;
+        while (contextCandidate is not IElement)
         {
-            result.AppendChild(node);
+            contextCandidate = contextCandidate.Parent;
+        }
+
+        var nodes = htmlParser.ParseFragment(markupContent, (IElement)contextCandidate);
+        var result = parent.Node.Owner!.CreateDocumentFragment();
+        for (int i = 0; i < nodes.Length; i++)
+        {
+            result.AppendChild(nodes[i]);
         }
         return result;
     }
@@ -405,11 +418,6 @@ internal class AngleSharpRenderer
     private void AttachComponentToElement(int childComponentId, LogicalElement containerElement)
     {
         childComponentLocations[childComponentId] = containerElement;
-    }
-
-    private void ApplyAnyDeferredValue(IElement newDomElementRaw)
-    {
-        // spacial case handling over in D:\dotnet\aspnetcore\src\Components\Web.JS\src\Rendering\DomSpecialPropertyUtil.ts
     }
 
     private void ApplyCaptureIdToElement(IElement element, string referenceCaptureId)

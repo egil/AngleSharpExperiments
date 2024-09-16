@@ -102,7 +102,7 @@ internal static class AngleSharpExtensions
                 return true;
 
             case IHtmlOptionElement optionElement:
-                if (value != null || value == string.Empty)
+                if (value is { Length: 0 })
                 {
                     optionElement.SetAttribute("value", value);
                 }
@@ -165,6 +165,8 @@ internal static class AngleSharpExtensions
         {
             element.SetAttribute("value", value);
         }
+
+        element.RemoveAttribute(DeferredValuePropName);
     }
 
     private static void SetSingleSelectElementValue(IHtmlSelectElement element, string value)
@@ -192,14 +194,14 @@ internal static class AngleSharpExtensions
     private static void TrySetSelectValueFromOptionElement(this IHtmlOptionElement optionElement)
     {
         var selectElement = optionElement.FindClosestAncestorSelectElement();
-        if (selectElement == null || !selectElement.HasAttribute(DeferredValuePropName))
+        if (selectElement is null || !selectElement.HasAttribute(DeferredValuePropName))
         {
             return;
         }
 
         if (selectElement.IsMultiple)
         {
-            optionElement.IsSelected = selectElement.GetAttribute(DeferredValuePropName).Contains(optionElement.Value);
+            optionElement.IsSelected = selectElement.GetAttribute(DeferredValuePropName)?.Contains(optionElement.Value) ?? false;
         }
         else
         {
@@ -213,16 +215,19 @@ internal static class AngleSharpExtensions
         }
     }
 
-    private static IHtmlSelectElement FindClosestAncestorSelectElement(this IElement element)
+    private static IHtmlSelectElement? FindClosestAncestorSelectElement(this IElement element)
     {
-        while (element != null)
+        IElement? candidate = element;
+        while (candidate is not null)
         {
-            if (element is IHtmlSelectElement selectElement)
+            if (candidate is IHtmlSelectElement selectElement)
             {
                 return selectElement;
             }
-            element = element.ParentElement;
+
+            candidate = element.ParentElement;
         }
+
         return null;
     }
 }

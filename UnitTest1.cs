@@ -63,9 +63,9 @@ public class UnitTest1
     {
         await using var ctx = new BunitContext();
         var cut = await ctx.RenderAsync<AddOrRemoveElement>();
-        var input = cut.Find("input");
+        var input = cut.Document.QuerySelector("input");
         await input.DispatchEventAsync(new ChangeEventArgs<int> { Value = 2 });
 
-        Assert.Equal(2, cut.Find("main").ChildElementCount);
+        Assert.Equal(2, cut.Document.QuerySelector("main").ChildElementCount);
     }
 }
