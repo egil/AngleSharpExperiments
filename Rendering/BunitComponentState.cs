@@ -11,16 +11,14 @@ public class BunitComponentState : ComponentState
     private readonly BunitRenderer renderer;
     private readonly List<BunitComponentState> children = [];
     private INodeList nodes = BunitComponentNodeList.Empty;
-    private string? markup;
 
     public IReadOnlyList<BunitComponentState> Children => children;
 
-    public INodeList Nodes
+    public virtual INodeList Nodes
     {
         get => nodes;
         internal set
         {
-            markup = null;
             nodes = value;
         }
     }
@@ -29,18 +27,7 @@ public class BunitComponentState : ComponentState
 
     public BunitComponentState? Parent { get; }
 
-    public string Markup
-    {
-        get
-        {
-            if (markup is null)
-            {
-                markup = nodes.Prettify();
-            }
-
-            return markup;
-        }
-    }
+    public string Markup => Nodes.Prettify();
 
     public BunitComponentState(BunitRenderer renderer, int componentId, IComponent component, BunitComponentState parentComponentState)
         : base(renderer, componentId, component, parentComponentState)

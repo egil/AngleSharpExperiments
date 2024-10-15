@@ -13,6 +13,12 @@ public class BunitRootComponentState : BunitComponentState
 
     public IDocument Document { get; }
 
+    public override INodeList Nodes
+    {
+        get => Document.Body!.ChildNodes;
+        internal set => throw new InvalidOperationException("Root should not have nodes set");
+    }
+
     public BunitRootComponentState(BunitRenderer renderer, int componentId, IComponent component, IDocument document)
         : base(renderer, componentId, component)
     {

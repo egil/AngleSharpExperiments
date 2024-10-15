@@ -49,8 +49,8 @@ internal class AngleSharpRenderer
     public void UpdateComponent(RenderBatch batch, int componentId, ArrayBuilderSegment<RenderTreeEdit> edits, ArrayRange<RenderTreeFrame> referenceFrames)
     {
         var element = childComponentLocations[componentId];
-        
-        Debug.Assert(element.Node is IComment || element.Node == element.Node.Owner!.Body, "I assume the component's start in the DOM always a comment node or BODY.");
+
+        Debug.Assert(element.Node is IComment || element.Node == element.Node.Owner!.Body, "I assume the component's start in the DOM is always a <!--!--> or BODY.");
 
         if (element == null)
         {
