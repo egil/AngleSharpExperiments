@@ -59,13 +59,43 @@ public class UnitTest1
     }
 
     [Fact]
-    public async Task AddAndRemoveElements()
+    public async Task AddElements()
     {
         await using var ctx = new BunitContext();
         var cut = await ctx.RenderAsync<AddOrRemoveElement>();
-        var input = cut.Document.QuerySelector("input");
+
+        var mainElmBefore = cut.Nodes.QuerySelector("main");
+        Assert.Equal(0, mainElmBefore.ChildElementCount);
+
+        var input = cut.Nodes.QuerySelector("input");
         await input.DispatchEventAsync(new ChangeEventArgs<int> { Value = 2 });
 
-        Assert.Equal(2, cut.Document.QuerySelector("main").ChildElementCount);
+        var mainElmAfter = cut.Nodes.QuerySelector("main");
+        Assert.Same(mainElmBefore, mainElmAfter);
+        Assert.Equal(2, mainElmAfter.ChildElementCount);
+    }
+
+    [Fact]
+    public async Task AddThenRemoveElements()
+    {
+        await using var ctx = new BunitContext();
+        var cut = await ctx.RenderAsync<AddOrRemoveElement>();
+        var input = cut.Nodes.QuerySelector("input");
+        await input.DispatchEventAsync(new ChangeEventArgs<int> { Value = 2 });
+        var span = cut.Nodes.QuerySelector("main > span");
+        await input.DispatchEventAsync(new ChangeEventArgs<int> { Value = 1 });
+
+        // what to do about the SPAN!
+        Assert.Equal("Span", span.TextContent);
+    }
+
+    [Fact]
+    public async Task AngleSharpRenderer_simple_element()
+    {
+        await using var ctx = new BunitContext();
+        var cut = await ctx.RenderAsync<Components.Element>();
+
+        var markup = cut.Markup;
+        Assert.NotNull(markup);
     }
 }
